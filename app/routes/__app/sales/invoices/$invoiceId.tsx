@@ -1,4 +1,4 @@
-import type { LoaderFunction, ActionFunction } from "@remix-run/node";
+import type { LoaderFunction, ActionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   Link,
@@ -36,7 +36,7 @@ type LoaderData = {
   deposits: Array<
     Pick<Deposit, "id" | "amount"> & { depositDateFormatted: string }
   >;
-  invoiceChart: InvoiceChart;
+  invoiceChart: InvoiceChart | null;
 };
 
 export const loader: LoaderFunction = async ({ request, params }) => {
@@ -98,7 +98,7 @@ function validateDepositDate(date: Date) {
   return null;
 }
 
-export const action: ActionFunction = async ({ request, params }) => {
+export async function action({ request, params }: ActionArgs) {
   await requireUser(request);
   const { invoiceId } = params;
   if (typeof invoiceId !== "string") {
@@ -135,7 +135,7 @@ export const action: ActionFunction = async ({ request, params }) => {
       throw new Error(`Unsupported intent: ${intent}`);
     }
   }
-};
+}
 
 function usePendingData() {
   const data = useLoaderData() as LoaderData;
@@ -167,6 +167,7 @@ const lineItemClassName =
   "flex justify-between border-t border-gray-100 py-4 text-[14px] leading-[24px]";
 export default function InvoiceRoute() {
   const { data, isTransitioning } = usePendingData();
+
   return (
     <div
       className={clsx("relative p-10", isTransitioning ? "opacity-50" : null)}
@@ -272,7 +273,7 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
-          {deposits.length > 1 ? (
+          {deposits.length > 1 && invoiceChart ? (
             <DepositsLineChart invoiceChart={invoiceChart} />
           ) : null}
           {deposits.map((deposit) => (
@@ -371,7 +372,7 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
 }
 
 type DepositsLineChartProps = {
-  invoiceChart: LoaderData["invoiceChart"];
+  invoiceChart: NonNullable<LoaderData["invoiceChart"]>;
 };
 
 const width = 400;

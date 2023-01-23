@@ -4,7 +4,7 @@ import type {
   MetaFunction,
 } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import type { ShouldReloadFunction } from "@remix-run/react";
+import type { ShouldRevalidateFunction } from "@remix-run/react";
 import {
   Links,
   LiveReload,
@@ -128,5 +128,6 @@ function LogoutTimer() {
   );
 }
 
-export const unstable_shouldReload: ShouldReloadFunction = ({ submission }) =>
-  submission?.action === "/logout" || submission?.action === "/login";
+export const shouldRevalidate: ShouldRevalidateFunction = ({ formAction }) => {
+  return formAction === "/logout" || formAction === "/login";
+};

@@ -1,8 +1,8 @@
 import * as React from "react";
 import { Link, useLoaderData, useOutlet, useParams } from "@remix-run/react";
-import type { LoaderFunction } from "@remix-run/server-runtime";
+import type { LoaderArgs } from "@remix-run/server-runtime";
 import { json } from "@remix-run/server-runtime";
-import { CevronDownIcon } from "~/components";
+import { ChevronDownIcon } from "~/components";
 import { getDepositListItems } from "~/models/deposit.server";
 import { requireUser } from "~/session.server";
 import { currencyFormatter } from "~/utils";
@@ -12,15 +12,15 @@ type LoaderData = {
   deposits: Awaited<ReturnType<typeof getDepositListItems>>;
 };
 
-export const loader: LoaderFunction = async ({ request }) => {
+export async function loader({ request }: LoaderArgs) {
   await requireUser(request);
   return json<LoaderData>({
     deposits: await getDepositListItems(),
   });
-};
+}
 
 export default function Deposits() {
-  const data = useLoaderData() as LoaderData;
+  const data = useLoaderData<typeof loader>();
   const outlet = useOutlet();
   const { depositId } = useParams();
   const depositNotFound =
@@ -51,7 +51,7 @@ export default function Deposits() {
                     to={d.id === depositId ? "." : d.id}
                     className="flex justify-center"
                   >
-                    <CevronDownIcon
+                    <ChevronDownIcon
                       className={clsx({
                         "-rotate-90": d.id === depositId,
                       })}

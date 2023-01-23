@@ -113,6 +113,7 @@ function InvoiceList({ children }: { children: React.ReactNode }) {
                 " " +
                 (isActive ? "bg-gray-50" : "")
               }
+              preventScrollReset
             >
               <div className="flex justify-between text-[length:14px] font-bold leading-6">
                 <div>{invoice.name}</div>

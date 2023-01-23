@@ -106,7 +106,7 @@ export function MinusIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function CevronDownIcon(props: React.SVGProps<SVGSVGElement>) {
+export function ChevronDownIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width={24} height={24} fill="none" {...props}>
       <path

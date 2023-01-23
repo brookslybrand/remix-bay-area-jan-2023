@@ -30,7 +30,9 @@ interface Dimensions {
 export function generateInvoiceChart(
   deposits: Deposits,
   { width, height, margin }: Dimensions
-): InvoiceChart {
+): InvoiceChart | null {
+  if (deposits.length === 0) return null;
+
   const data = calculateCumulativeDeposits(deposits);
   const firstEntry = data[0];
   const lastEntry = data[data.length - 1];
