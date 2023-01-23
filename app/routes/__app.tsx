@@ -1,4 +1,4 @@
-import { Form, Link, NavLink, Outlet, useTransition } from "@remix-run/react";
+import { Form, Link, NavLink, Outlet, useNavigation } from "@remix-run/react";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
 import {
@@ -9,8 +9,8 @@ import {
 } from "~/components";
 
 export default function AppRoute() {
-  const transition = useTransition();
-  const showSpinner = useSpinDelay(transition.state !== "idle", {
+  const navigation = useNavigation();
+  const showSpinner = useSpinDelay(navigation.state !== "idle", {
     delay: 200,
     minDuration: 300,
   });

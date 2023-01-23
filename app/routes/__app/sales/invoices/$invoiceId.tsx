@@ -1,4 +1,4 @@
-import type { LoaderFunction, ActionArgs } from "@remix-run/node";
+import type { LoaderArgs, ActionArgs, LinksFunction } from "@remix-run/node";
 import { json } from "@remix-run/node";
 import {
   Link,
@@ -6,7 +6,7 @@ import {
   useFetcher,
   useLoaderData,
   useParams,
-  useTransition,
+  useNavigation,
 } from "@remix-run/react";
 import { inputClasses, LabelText, submitButtonClasses } from "~/components";
 import { getInvoiceDetails } from "~/models/invoice.server";
@@ -20,8 +20,15 @@ import { useEffect, useRef, useState } from "react";
 import { interpolatePath } from "d3-interpolate-path";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
+import { Tooltip } from "@reach/tooltip";
+import tooltipStyles from "~/styles/tooltip.css";
+import { useHydrated } from "remix-utils";
 import { generateInvoiceChart } from "~/utils/chart.server";
 import type { InvoiceChart } from "~/utils/chart.server";
+
+export const links: LinksFunction = () => [
+  { rel: "stylesheet", href: tooltipStyles },
+];
 
 type LoaderData = {
   customerName: string;
@@ -39,7 +46,7 @@ type LoaderData = {
   invoiceChart: InvoiceChart | null;
 };
 
-export const loader: LoaderFunction = async ({ request, params }) => {
+export async function loader({ request, params }: LoaderArgs) {
   await requireUser(request);
   const { invoiceId } = params;
   if (typeof invoiceId !== "string") {
@@ -74,7 +81,7 @@ export const loader: LoaderFunction = async ({ request, params }) => {
       margin,
     }),
   });
-};
+}
 
 type ActionData = {
   errors: {
@@ -138,13 +145,13 @@ export async function action({ request, params }: ActionArgs) {
 }
 
 function usePendingData() {
-  const data = useLoaderData() as LoaderData;
+  const data = useLoaderData<typeof loader>();
   const [previousData, setPreviousData] = useState(data);
-  const transition = useTransition();
+  const navigation = useNavigation();
 
-  const isTransitioning = useSpinDelay(
-    transition.state !== "idle" &&
-      transition.location.pathname.startsWith("/sales/invoices/"),
+  const isNavigating = useSpinDelay(
+    navigation.state !== "idle" &&
+      navigation.location.pathname.startsWith("/sales/invoices/"),
     {
       delay: 200,
       minDuration: 400,
@@ -152,26 +159,22 @@ function usePendingData() {
   );
 
   useEffect(() => {
-    if (!isTransitioning) {
+    if (!isNavigating) {
       setPreviousData(data);
     }
-  }, [data, isTransitioning]);
+  }, [data, isNavigating]);
 
   return {
     data: previousData,
-    isTransitioning,
+    isNavigating,
   };
 }
 
-const lineItemClassName =
-  "flex justify-between border-t border-gray-100 py-4 text-[14px] leading-[24px]";
 export default function InvoiceRoute() {
-  const { data, isTransitioning } = usePendingData();
+  const { data, isNavigating } = usePendingData();
 
   return (
-    <div
-      className={clsx("relative p-10", isTransitioning ? "opacity-50" : null)}
-    >
+    <div className={clsx("relative p-10", isNavigating ? "opacity-50" : null)}>
       <Link
         to={`../../customers/${data.customerId}`}
         className="text-[length:14px] font-bold leading-6 text-blue-600 underline"
@@ -197,17 +200,18 @@ export default function InvoiceRoute() {
       </LabelText>
       <div className="h-4" />
       {data.lineItems.map((item) => (
-        <LineItemDisplay
-          key={item.id}
-          description={item.description}
-          unitPrice={item.unitPrice}
-          quantity={item.quantity}
-        />
+        <LineItemContainer key={item.id}>
+          <div>{item.description}</div>
+          {item.quantity === 1 ? null : (
+            <div className="text-[10px]">({item.quantity}x)</div>
+          )}
+          <div>{currencyFormatter.format(item.unitPrice)}</div>
+        </LineItemContainer>
       ))}
-      <div className={`${lineItemClassName} font-bold`}>
+      <LineItemContainer className="font-bold">
         <div>Net Total</div>
         <div>{currencyFormatter.format(data.totalAmount)}</div>
-      </div>
+      </LineItemContainer>
       <div className="h-8" />
       <Deposits deposits={data.deposits} invoiceChart={data.invoiceChart} />
     </div>
@@ -277,7 +281,7 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
             <DepositsLineChart invoiceChart={invoiceChart} />
           ) : null}
           {deposits.map((deposit) => (
-            <div key={deposit.id} className={lineItemClassName}>
+            <LineItemContainer key={deposit.id}>
               <Link
                 to={`../../deposits/${deposit.id}`}
                 className="text-blue-600 underline"
@@ -285,7 +289,7 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
                 {deposit.depositDateFormatted}
               </Link>
               <div>{currencyFormatter.format(deposit.amount)}</div>
-            </div>
+            </LineItemContainer>
           ))}
         </div>
       ) : (
@@ -380,7 +384,10 @@ const height = 200;
 const margin = { top: 10, right: 10, bottom: 30, left: 10 };
 
 function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
-  const dPath = useDPathAnimation(invoiceChart.dPath);
+  const { intermediateDPath: dPath, state } = useDPathAnimation(
+    invoiceChart.dPath
+  );
+  const isHydrated = useHydrated();
 
   return (
     <svg
@@ -391,28 +398,21 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
       className="min-w-[250px]"
     >
       <g transform={`translate(${margin.left},${margin.top})`}>
-        <path
-          className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
-          d={dPath}
-        />
-
         {/* "y-axis" */}
         {invoiceChart.yAxis.map(({ x, y, value }, i, arr) => (
-          <text
-            className={textClassName}
+          <AxisText
             key={`${x},${y}`}
             x={x}
             y={y}
             textAnchor={i === arr.length - 1 ? "end" : "start"}
           >
             {value}
-          </text>
+          </AxisText>
         ))}
 
         {/* x-axis */}
         {invoiceChart.xAxis.map(({ x, y, value }, i, arr) => (
-          <text
-            className={textClassName}
+          <AxisText
             key={`${x},${y}`}
             x={x}
             y={y}
@@ -420,18 +420,61 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
             textAnchor={i === arr.length - 1 ? "end" : "start"}
           >
             {value}
-          </text>
+          </AxisText>
         ))}
+
+        <path
+          className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
+          d={dPath}
+        />
+        {/* TODO: GET ALL THE DATA POINTS */}
+        {state === "idle"
+          ? invoiceChart.xAxis.map(({ x, value }, i) => {
+              const { y, value: yValue } = invoiceChart.yAxis[i];
+              const label = `${value} - ${yValue}`;
+              return (
+                <Tooltip
+                  key={x}
+                  label={label}
+                  className="rounded-md bg-zinc-500 px-2 py-1 text-white"
+                >
+                  <circle
+                    key={x}
+                    cx={x}
+                    cy={y + margin.top}
+                    r={4}
+                    strokeWidth={10}
+                    className="fill-blue-400 stroke-transparent opacity-70"
+                  >
+                    {!isHydrated ? <title>{label}</title> : null}
+                  </circle>
+                </Tooltip>
+              );
+            })
+          : null}
       </g>
     </svg>
   );
 }
 
-const textClassName = "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs";
+function AxisText({ className, ...props }: React.SVGProps<SVGTextElement>) {
+  return (
+    <text
+      className={clsx(
+        "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs",
+        className
+      )}
+      {...props}
+    />
+  );
+}
 
 function useDPathAnimation(dPath: string, durationMs = 200) {
   const previousDPath = useRef(dPath);
-  const [intermediateDPath, setIntermediateDPath] = useState(dPath);
+  const [intermediateDPath, setIntermediateDPath] = useState<{
+    intermediateDPath: string;
+    state: "transitioning" | "idle";
+  }>({ intermediateDPath: dPath, state: "idle" });
 
   useEffect(() => {
     if (dPath === previousDPath.current) return;
@@ -444,10 +487,14 @@ function useDPathAnimation(dPath: string, durationMs = 200) {
     function step() {
       if (t < 1) {
         t = Math.min(t + rate, 1);
-        setIntermediateDPath(pathInterpolator(t));
+        setIntermediateDPath({
+          intermediateDPath: pathInterpolator(t),
+          state: "transitioning",
+        });
         window.requestAnimationFrame(step);
       } else {
         if (dPath === null) return;
+        setIntermediateDPath({ intermediateDPath: dPath, state: "idle" });
         previousDPath.current = dPath;
       }
     }
@@ -458,20 +505,21 @@ function useDPathAnimation(dPath: string, durationMs = 200) {
   return intermediateDPath;
 }
 
-function LineItemDisplay({
-  description,
-  quantity,
-  unitPrice,
+function LineItemContainer({
+  className,
+  children,
 }: {
-  description: string;
-  quantity: number;
-  unitPrice: number;
+  className?: string;
+  children: React.ReactNode;
 }) {
   return (
-    <div className={lineItemClassName}>
-      <div>{description}</div>
-      {quantity === 1 ? null : <div className="text-[10px]">({quantity}x)</div>}
-      <div>{currencyFormatter.format(unitPrice)}</div>
+    <div
+      className={clsx(
+        "flex justify-between border-t border-gray-100 py-4 text-[14px] leading-[24px]",
+        className
+      )}
+    >
+      {children}
     </div>
   );
 }
