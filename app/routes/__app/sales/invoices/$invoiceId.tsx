@@ -17,14 +17,9 @@ import type { Deposit } from "~/models/deposit.server";
 import { createDeposit } from "~/models/deposit.server";
 import invariant from "tiny-invariant";
 import { useEffect, useRef, useState } from "react";
-import { interpolatePath } from "d3-interpolate-path";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
-import { Tooltip } from "@reach/tooltip";
 import tooltipStyles from "~/styles/tooltip.css";
-import { useHydrated } from "remix-utils";
-import { generateInvoiceChart } from "~/utils/chart.server";
-import type { InvoiceChart } from "~/utils/chart.server";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tooltipStyles },
@@ -43,7 +38,6 @@ type LoaderData = {
   deposits: Array<
     Pick<Deposit, "id" | "amount"> & { depositDateFormatted: string }
   >;
-  invoiceChart: InvoiceChart | null;
 };
 
 export async function loader({ request, params }: LoaderArgs) {
@@ -75,11 +69,6 @@ export async function loader({ request, params }: LoaderArgs) {
       amount: deposit.amount,
       depositDateFormatted: deposit.depositDate.toLocaleDateString(),
     })),
-    invoiceChart: generateInvoiceChart(invoiceDetails.invoice.deposits, {
-      width,
-      height,
-      margin,
-    }),
   });
 }
 
@@ -213,7 +202,7 @@ export default function InvoiceRoute() {
         <div>{currencyFormatter.format(data.totalAmount)}</div>
       </LineItemContainer>
       <div className="h-8" />
-      <Deposits deposits={data.deposits} invoiceChart={data.invoiceChart} />
+      <Deposits deposits={data.deposits} />
     </div>
   );
 }
@@ -228,8 +217,8 @@ interface DepositFormElement extends HTMLFormElement {
   readonly elements: DepositFormControlsCollection;
 }
 
-type DepositsProps = Pick<LoaderData, "deposits" | "invoiceChart">;
-function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
+type DepositsProps = Pick<LoaderData, "deposits">;
+function Deposits({ deposits: ogDeposits }: DepositsProps) {
   const newDepositFetcher = useFetcher();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -277,9 +266,6 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
-          {deposits.length > 1 && invoiceChart ? (
-            <DepositsLineChart invoiceChart={invoiceChart} />
-          ) : null}
           {deposits.map((deposit) => (
             <LineItemContainer key={deposit.id}>
               <Link
@@ -373,131 +359,6 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
       </newDepositFetcher.Form>
     </div>
   );
-}
-
-type DepositsLineChartProps = {
-  invoiceChart: NonNullable<LoaderData["invoiceChart"]>;
-};
-
-const width = 400;
-const height = 200;
-const margin = { top: 10, right: 10, bottom: 30, left: 10 };
-
-function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
-  const { intermediateDPath: dPath, state } = useDPathAnimation(
-    invoiceChart.dPath
-  );
-  const isHydrated = useHydrated();
-
-  return (
-    <svg
-      viewBox={`0 0
-        ${width + margin.left + margin.right}
-        ${height + margin.top + margin.bottom}
-      `}
-      className="min-w-[250px]"
-    >
-      <g transform={`translate(${margin.left},${margin.top})`}>
-        {/* "y-axis" */}
-        {invoiceChart.yAxis.map(({ x, y, label }, i, arr) => (
-          <AxisText
-            key={`${x},${y}`}
-            x={x}
-            y={y}
-            textAnchor={i === arr.length - 1 ? "end" : "start"}
-          >
-            {label}
-          </AxisText>
-        ))}
-
-        {/* x-axis */}
-        {invoiceChart.xAxis.map(({ x, y, label }, i, arr) => (
-          <AxisText
-            key={`${x},${y}`}
-            x={x}
-            y={y}
-            alignmentBaseline="hanging"
-            textAnchor={i === arr.length - 1 ? "end" : "start"}
-          >
-            {label}
-          </AxisText>
-        ))}
-
-        <path
-          className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
-          d={dPath}
-        />
-        {state === "idle"
-          ? invoiceChart.points.map(({ x, y, label }) => (
-              <Tooltip
-                key={x}
-                label={label}
-                className="rounded-md bg-zinc-500 px-2 py-1 text-white"
-              >
-                <circle
-                  key={x}
-                  cx={x}
-                  cy={y}
-                  r={4}
-                  strokeWidth={10}
-                  className="fill-blue-400 stroke-transparent opacity-70"
-                >
-                  {!isHydrated ? <title>{label}</title> : null}
-                </circle>
-              </Tooltip>
-            ))
-          : null}
-      </g>
-    </svg>
-  );
-}
-
-function AxisText({ className, ...props }: React.SVGProps<SVGTextElement>) {
-  return (
-    <text
-      className={clsx(
-        "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs",
-        className
-      )}
-      {...props}
-    />
-  );
-}
-
-function useDPathAnimation(dPath: string, durationMs = 200) {
-  const previousDPath = useRef(dPath);
-  const [intermediateDPath, setIntermediateDPath] = useState<{
-    intermediateDPath: string;
-    state: "transitioning" | "idle";
-  }>({ intermediateDPath: dPath, state: "idle" });
-
-  useEffect(() => {
-    if (dPath === previousDPath.current) return;
-
-    const pathInterpolator = interpolatePath(previousDPath.current, dPath);
-
-    let t = 0;
-    let rate = 1000 / (60 * durationMs);
-
-    function step() {
-      if (t < 1) {
-        t = Math.min(t + rate, 1);
-        setIntermediateDPath({
-          intermediateDPath: pathInterpolator(t),
-          state: "transitioning",
-        });
-        window.requestAnimationFrame(step);
-      } else {
-        if (dPath === null) return;
-        setIntermediateDPath({ intermediateDPath: dPath, state: "idle" });
-        previousDPath.current = dPath;
-      }
-    }
-
-    step();
-  }, [dPath, durationMs]);
-
-  return intermediateDPath;
 }
 
 function LineItemContainer({
