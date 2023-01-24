@@ -217,6 +217,10 @@ interface DepositFormElement extends HTMLFormElement {
   readonly elements: DepositFormControlsCollection;
 }
 
+const width = 400;
+const height = 200;
+const margin = { top: 10, right: 10, bottom: 30, left: 10 };
+
 type DepositsProps = Pick<LoaderData, "deposits">;
 function Deposits({ deposits: ogDeposits }: DepositsProps) {
   const newDepositFetcher = useFetcher();
@@ -261,11 +265,47 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
     }
   }, [newDepositFetcher.type, errors]);
 
+  const data = calculateCumulativeDeposits(deposits);
+  const firstEntry = data[0];
+  const lastEntry = data[data.length - 1];
+
+  const yScale = (y: number) => {
+    const domain = lastEntry.y - firstEntry.y;
+    const range = height - margin.bottom - margin.top;
+    return height - ((range / domain) * (y - firstEntry.y) + margin.bottom);
+  };
+  const xScale = (x: Date) => {
+    const domain = lastEntry.x.valueOf() - firstEntry.x.valueOf();
+    const range = width - margin.right - margin.left;
+    return (
+      (range / domain) * (x.valueOf() - firstEntry.x.valueOf()) + margin.left
+    );
+  };
+
   return (
     <div>
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
+          <svg viewBox={`0 0 ${width} ${height}`}>
+            <g transform={`translate(${margin.left},${margin.top})`}>
+              <AxisText
+                x={xScale(firstEntry.x)}
+                y={yScale(firstEntry.y)}
+                textAnchor="start"
+              >
+                {format.amount.format(firstEntry.y)}
+              </AxisText>
+              <AxisText
+                x={xScale(lastEntry.x)}
+                y={yScale(lastEntry.y)}
+                alignmentBaseline="hanging"
+                textAnchor="end"
+              >
+                {format.amount.format(lastEntry.y)}
+              </AxisText>
+            </g>
+          </svg>
           {deposits.map((deposit) => (
             <LineItemContainer key={deposit.id}>
               <Link
@@ -380,6 +420,18 @@ function LineItemContainer({
   );
 }
 
+function AxisText({ className, ...props }: React.SVGProps<SVGTextElement>) {
+  return (
+    <text
+      className={clsx(
+        "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs",
+        className
+      )}
+      {...props}
+    />
+  );
+}
+
 export function CatchBoundary() {
   const caught = useCatch();
   const params = useParams();
@@ -407,3 +459,36 @@ export function ErrorBoundary({ error }: { error: Error }) {
     </div>
   );
 }
+
+// Chart utils
+
+function calculateCumulativeDeposits(deposits: LoaderData["deposits"]) {
+  const amountPerDate = new Map<Date, number>();
+  for (const { amount, depositDateFormatted } of deposits) {
+    const depositDate = new Date(depositDateFormatted);
+    const currentAmount = amountPerDate.get(depositDate) ?? 0;
+    amountPerDate.set(depositDate, currentAmount + amount);
+  }
+
+  const dates = [...amountPerDate.keys()].sort(
+    (d1, d2) => d1.getDate() - d2.getDate()
+  );
+
+  let cumulativeAmount = 0;
+  return dates.map((date) => {
+    cumulativeAmount += amountPerDate.get(date) ?? 0;
+    return { x: date, y: cumulativeAmount };
+  });
+}
+
+const format = {
+  amount: new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    currencyDisplay: "narrowSymbol",
+  }),
+  date: new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }),
+};
