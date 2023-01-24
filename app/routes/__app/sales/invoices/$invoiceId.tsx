@@ -399,19 +399,19 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
     >
       <g transform={`translate(${margin.left},${margin.top})`}>
         {/* "y-axis" */}
-        {invoiceChart.yAxis.map(({ x, y, value }, i, arr) => (
+        {invoiceChart.yAxis.map(({ x, y, label }, i, arr) => (
           <AxisText
             key={`${x},${y}`}
             x={x}
             y={y}
             textAnchor={i === arr.length - 1 ? "end" : "start"}
           >
-            {value}
+            {label}
           </AxisText>
         ))}
 
         {/* x-axis */}
-        {invoiceChart.xAxis.map(({ x, y, value }, i, arr) => (
+        {invoiceChart.xAxis.map(({ x, y, label }, i, arr) => (
           <AxisText
             key={`${x},${y}`}
             x={x}
@@ -419,7 +419,7 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
             alignmentBaseline="hanging"
             textAnchor={i === arr.length - 1 ? "end" : "start"}
           >
-            {value}
+            {label}
           </AxisText>
         ))}
 
@@ -427,30 +427,25 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
           className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
           d={dPath}
         />
-        {/* TODO: GET ALL THE DATA POINTS */}
         {state === "idle"
-          ? invoiceChart.xAxis.map(({ x, value }, i) => {
-              const { y, value: yValue } = invoiceChart.yAxis[i];
-              const label = `${value} - ${yValue}`;
-              return (
-                <Tooltip
+          ? invoiceChart.points.map(({ x, y, label }) => (
+              <Tooltip
+                key={x}
+                label={label}
+                className="rounded-md bg-zinc-500 px-2 py-1 text-white"
+              >
+                <circle
                   key={x}
-                  label={label}
-                  className="rounded-md bg-zinc-500 px-2 py-1 text-white"
+                  cx={x}
+                  cy={y}
+                  r={4}
+                  strokeWidth={10}
+                  className="fill-blue-400 stroke-transparent opacity-70"
                 >
-                  <circle
-                    key={x}
-                    cx={x}
-                    cy={y + margin.top}
-                    r={4}
-                    strokeWidth={10}
-                    className="fill-blue-400 stroke-transparent opacity-70"
-                  >
-                    {!isHydrated ? <title>{label}</title> : null}
-                  </circle>
-                </Tooltip>
-              );
-            })
+                  {!isHydrated ? <title>{label}</title> : null}
+                </circle>
+              </Tooltip>
+            ))
           : null}
       </g>
     </svg>

@@ -4,14 +4,15 @@ import { line, curveStepAfter } from "d3-shape";
 
 export interface InvoiceChart {
   dPath: string;
-  yAxis: AxisPoint[];
-  xAxis: AxisPoint[];
+  yAxis: Point[];
+  xAxis: Point[];
+  points: Point[];
 }
 
-interface AxisPoint {
+interface Point {
   x: number;
   y: number;
-  value: string;
+  label: string;
 }
 
 type Deposits = Array<Pick<Deposit, "id" | "amount" | "depositDate">>;
@@ -58,32 +59,39 @@ export function generateInvoiceChart(
     );
   }
 
+  const points = data.map(({ x, y }) => ({
+    x: xScale(x),
+    y: yScale(y),
+    label: `${formatDate(x)} - ${formatAmount(y)}`,
+  }));
+
   return {
     dPath,
     yAxis: [
       {
         x: xScale(firstEntry.x),
         y: yScale(firstEntry.y) - margin.top,
-        value: formatAmount(firstEntry.y),
+        label: formatAmount(firstEntry.y),
       },
       {
         x: xScale(lastEntry.x),
         y: yScale(lastEntry.y) - margin.top,
-        value: formatAmount(lastEntry.y),
+        label: formatAmount(lastEntry.y),
       },
     ],
     xAxis: [
       {
         x: xScale(firstEntry.x),
         y: height,
-        value: formatDate(firstEntry.x),
+        label: formatDate(firstEntry.x),
       },
       {
         x: xScale(lastEntry.x),
         y: height,
-        value: formatDate(lastEntry.x),
+        label: formatDate(lastEntry.x),
       },
     ],
+    points,
   };
 }
 
