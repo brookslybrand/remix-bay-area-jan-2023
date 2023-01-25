@@ -21,6 +21,7 @@ import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
 import { scaleLinear, scaleTime } from "d3-scale";
 import { curveStepAfter, line } from "d3-shape";
+import { interpolatePath } from "d3-interpolate-path";
 
 import tooltipStyles from "~/styles/tooltip.css";
 
@@ -383,6 +384,8 @@ function DepositsLineChart({ deposits }: DepositsProps) {
     `Something went wrong: line generation failed with data ${data}`
   );
 
+  const { intermediateDPath, state } = useDPathAnimation(dPath);
+
   return (
     <svg
       viewBox={`0 0 ${width + margin.left + margin.right} ${
@@ -409,11 +412,46 @@ function DepositsLineChart({ deposits }: DepositsProps) {
 
         <path
           className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
-          d={dPath}
+          d={intermediateDPath}
         />
       </g>
     </svg>
   );
+}
+
+function useDPathAnimation(dPath: string, durationMs = 200) {
+  const previousDPath = useRef(dPath);
+  const [intermediateDPath, setIntermediateDPath] = useState<{
+    intermediateDPath: string;
+    state: "transitioning" | "idle";
+  }>({ intermediateDPath: dPath, state: "idle" });
+
+  useEffect(() => {
+    if (dPath === previousDPath.current) return;
+
+    const pathInterpolator = interpolatePath(previousDPath.current, dPath);
+
+    let t = 0;
+    let rate = 1000 / (durationMs * 60);
+
+    function step() {
+      if (t < 1) {
+        t = Math.min(t + rate, 1);
+        setIntermediateDPath({
+          intermediateDPath: pathInterpolator(t),
+          state: "transitioning",
+        });
+        window.requestAnimationFrame(step);
+      } else {
+        setIntermediateDPath({ intermediateDPath: dPath, state: "idle" });
+        previousDPath.current = dPath;
+      }
+    }
+
+    step();
+  }, [dPath, durationMs]);
+
+  return intermediateDPath;
 }
 
 function LineItemContainer({
