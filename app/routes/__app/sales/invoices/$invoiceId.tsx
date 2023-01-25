@@ -22,8 +22,10 @@ import { useSpinDelay } from "spin-delay";
 import { scaleLinear, scaleTime } from "d3-scale";
 import { curveStepAfter, line } from "d3-shape";
 import { interpolatePath } from "d3-interpolate-path";
+import { Tooltip } from "@reach/tooltip";
 
 import tooltipStyles from "~/styles/tooltip.css";
+import { useHydrated } from "remix-utils";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tooltipStyles },
@@ -357,9 +359,10 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
 
 const width = 400;
 const height = 200;
-const margin = { top: 10, right: 10, bottom: 30, left: 10 };
+const margin = { top: 10, right: 10, bottom: 20, left: 10 };
 
 function DepositsLineChart({ deposits }: DepositsProps) {
+  const isHydrated = useHydrated();
   const data = calculateCumulativeDeposits(deposits);
   const firstEntry = data[0];
   const lastEntry = data[data.length - 1];
@@ -379,6 +382,37 @@ function DepositsLineChart({ deposits }: DepositsProps) {
 
   const dPath = lineGenerator(data);
 
+  const yAxis = [
+    {
+      x: xScale(firstEntry.x),
+      y: yScale(firstEntry.y) - margin.top,
+      label: format.amount.format(firstEntry.y),
+    },
+    {
+      x: xScale(lastEntry.x),
+      y: yScale(lastEntry.y) - margin.top,
+      label: format.amount.format(lastEntry.y),
+    },
+  ];
+  const xAxis = [
+    {
+      x: xScale(firstEntry.x),
+      y: height + margin.bottom,
+      label: format.date.format(firstEntry.x),
+    },
+    {
+      x: xScale(lastEntry.x),
+      y: height + margin.bottom,
+      label: format.date.format(lastEntry.x),
+    },
+  ];
+
+  const points = data.map(({ x, y }) => ({
+    x: xScale(x),
+    y: yScale(y),
+    label: `${format.date.format(x)} - ${format.amount.format(y)}`,
+  }));
+
   invariant(
     dPath !== null,
     `Something went wrong: line generation failed with data ${data}`
@@ -394,26 +428,51 @@ function DepositsLineChart({ deposits }: DepositsProps) {
       className="min-w-[250px]"
     >
       <g transform={`translate(${margin.left},${margin.top})`}>
-        <AxisText
-          x={xScale(firstEntry.x)}
-          y={yScale(firstEntry.y)}
-          textAnchor="start"
-        >
-          {format.amount.format(firstEntry.y)}
-        </AxisText>
-        <AxisText
-          x={xScale(lastEntry.x)}
-          y={yScale(lastEntry.y)}
-          alignmentBaseline="hanging"
-          textAnchor="end"
-        >
-          {format.amount.format(lastEntry.y)}
-        </AxisText>
+        {yAxis.map(({ x, y, label }, i) => (
+          <AxisText
+            key={`${x},${y}`}
+            x={x}
+            y={y}
+            textAnchor={i === 0 ? "start" : "end"}
+          >
+            {label}
+          </AxisText>
+        ))}
+        {xAxis.map(({ x, y, label }, i) => (
+          <AxisText
+            key={`${x},${y}`}
+            x={x}
+            y={y}
+            textAnchor={i === 0 ? "start" : "end"}
+          >
+            {label}
+          </AxisText>
+        ))}
 
         <path
           className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
           d={intermediateDPath}
         />
+
+        {state === "idle"
+          ? points.map(({ x, y, label }) => (
+              <Tooltip
+                key={`${x},${y}`}
+                label={label}
+                className="rounded-md bg-zinc-500 px-2 py-1 text-white"
+              >
+                <circle
+                  cx={x}
+                  cy={y}
+                  r={4}
+                  strokeWidth={10}
+                  className="fill-blue-400 stroke-transparent opacity-70"
+                >
+                  {!isHydrated ? <title>{label}</title> : null}
+                </circle>
+              </Tooltip>
+            ))
+          : null}
       </g>
     </svg>
   );
@@ -432,7 +491,7 @@ function useDPathAnimation(dPath: string, durationMs = 200) {
     const pathInterpolator = interpolatePath(previousDPath.current, dPath);
 
     let t = 0;
-    let rate = 1000 / (durationMs * 60);
+    let rate = 1000 / (60 * durationMs);
 
     function step() {
       if (t < 1) {
