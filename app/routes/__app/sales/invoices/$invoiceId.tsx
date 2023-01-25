@@ -19,6 +19,9 @@ import invariant from "tiny-invariant";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
+import { scaleLinear, scaleTime } from "d3-scale";
+import { curveStepAfter, line } from "d3-shape";
+
 import tooltipStyles from "~/styles/tooltip.css";
 
 export const links: LinksFunction = () => [
@@ -217,10 +220,6 @@ interface DepositFormElement extends HTMLFormElement {
   readonly elements: DepositFormControlsCollection;
 }
 
-const width = 400;
-const height = 200;
-const margin = { top: 10, right: 10, bottom: 30, left: 10 };
-
 type DepositsProps = Pick<LoaderData, "deposits">;
 function Deposits({ deposits: ogDeposits }: DepositsProps) {
   const newDepositFetcher = useFetcher();
@@ -265,58 +264,12 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
     }
   }, [newDepositFetcher.type, errors]);
 
-  const data = calculateCumulativeDeposits(deposits);
-  const firstEntry = data[0];
-  const lastEntry = data[data.length - 1];
-
-  const yScale = (y: number) => {
-    const domain = lastEntry.y - firstEntry.y;
-    const range = height - margin.bottom - margin.top;
-    return height - ((range / domain) * (y - firstEntry.y) + margin.bottom);
-  };
-  const xScale = (x: Date) => {
-    const domain = lastEntry.x.valueOf() - firstEntry.x.valueOf();
-    const range = width - margin.right - margin.left;
-    return (
-      (range / domain) * (x.valueOf() - firstEntry.x.valueOf()) + margin.left
-    );
-  };
-
   return (
     <div>
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
-          <svg viewBox={`0 0 ${width} ${height}`}>
-            <g transform={`translate(${margin.left},${margin.top})`}>
-              <AxisText
-                x={xScale(firstEntry.x)}
-                y={yScale(firstEntry.y)}
-                textAnchor="start"
-              >
-                {format.amount.format(firstEntry.y)}
-              </AxisText>
-              <AxisText
-                x={xScale(lastEntry.x)}
-                y={yScale(lastEntry.y)}
-                alignmentBaseline="hanging"
-                textAnchor="end"
-              >
-                {format.amount.format(lastEntry.y)}
-              </AxisText>
-            </g>
-          </svg>
-          {deposits.map((deposit) => (
-            <LineItemContainer key={deposit.id}>
-              <Link
-                to={`../../deposits/${deposit.id}`}
-                className="text-blue-600 underline"
-              >
-                {deposit.depositDateFormatted}
-              </Link>
-              <div>{currencyFormatter.format(deposit.amount)}</div>
-            </LineItemContainer>
-          ))}
+          <DepositsLineChart deposits={deposits} />
         </div>
       ) : (
         <div>None yet</div>
@@ -398,6 +351,68 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
         </div>
       </newDepositFetcher.Form>
     </div>
+  );
+}
+
+const width = 400;
+const height = 200;
+const margin = { top: 10, right: 10, bottom: 30, left: 10 };
+
+function DepositsLineChart({ deposits }: DepositsProps) {
+  const data = calculateCumulativeDeposits(deposits);
+  const firstEntry = data[0];
+  const lastEntry = data[data.length - 1];
+
+  const yScale = scaleLinear()
+    .domain([firstEntry.y, lastEntry.y])
+    .range([height, 0])
+    .nice();
+  const xScale = scaleTime()
+    .domain([firstEntry.x, lastEntry.x])
+    .range([0, width]);
+
+  const lineGenerator = line<{ x: Date; y: number }>()
+    .x((d) => xScale(d.x))
+    .y((d) => yScale(d.y))
+    .curve(curveStepAfter);
+
+  const dPath = lineGenerator(data);
+
+  invariant(
+    dPath !== null,
+    `Something went wrong: line generation failed with data ${data}`
+  );
+
+  return (
+    <svg
+      viewBox={`0 0 ${width + margin.left + margin.right} ${
+        height + margin.top + margin.bottom
+      }`}
+      className="min-w-[250px]"
+    >
+      <g transform={`translate(${margin.left},${margin.top})`}>
+        <AxisText
+          x={xScale(firstEntry.x)}
+          y={yScale(firstEntry.y)}
+          textAnchor="start"
+        >
+          {format.amount.format(firstEntry.y)}
+        </AxisText>
+        <AxisText
+          x={xScale(lastEntry.x)}
+          y={yScale(lastEntry.y)}
+          alignmentBaseline="hanging"
+          textAnchor="end"
+        >
+          {format.amount.format(lastEntry.y)}
+        </AxisText>
+
+        <path
+          className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
+          d={dPath}
+        />
+      </g>
+    </svg>
   );
 }
 
