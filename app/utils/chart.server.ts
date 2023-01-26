@@ -1,11 +1,12 @@
+import { scaleLinear, scaleTime } from "d3-scale";
+import { curveStepAfter, line } from "d3-shape";
+import invariant from "tiny-invariant";
 import type { Deposit } from "@prisma/client";
-import { scaleTime, scaleLinear } from "d3-scale";
-import { line, curveStepAfter } from "d3-shape";
 
 export interface InvoiceChart {
   dPath: string;
-  yAxis: Point[];
-  xAxis: Point[];
+  yAxis: [Point, Point];
+  xAxis: [Point, Point];
   points: Point[];
 }
 
@@ -14,8 +15,6 @@ interface Point {
   y: number;
   label: string;
 }
-
-type Deposits = Array<Pick<Deposit, "id" | "amount" | "depositDate">>;
 
 interface Dimensions {
   width: number;
@@ -28,11 +27,13 @@ interface Dimensions {
   };
 }
 
+type Deposits = Pick<Deposit, "id" | "amount" | "depositDate">[];
+
 export function generateInvoiceChart(
   deposits: Deposits,
   { width, height, margin }: Dimensions
-): InvoiceChart | null {
-  if (deposits.length === 0) return null;
+): InvoiceChart | undefined {
+  if (deposits.length < 2) return undefined;
 
   const data = calculateCumulativeDeposits(deposits);
   const firstEntry = data[0];
@@ -40,11 +41,11 @@ export function generateInvoiceChart(
 
   const yScale = scaleLinear()
     .domain([firstEntry.y, lastEntry.y])
-    .nice()
-    .range([height - margin.bottom, margin.top]);
+    .range([height, 0])
+    .nice();
   const xScale = scaleTime()
     .domain([firstEntry.x, lastEntry.x])
-    .range([margin.left, width - margin.right]);
+    .range([0, width]);
 
   const lineGenerator = line<{ x: Date; y: number }>()
     .x((d) => xScale(d.x))
@@ -53,53 +54,53 @@ export function generateInvoiceChart(
 
   const dPath = lineGenerator(data);
 
-  if (dPath === null) {
-    throw new Error(
-      `Something went wrong: line generation failed with data ${data}`
-    );
-  }
+  invariant(
+    dPath !== null,
+    `Something went wrong: line generation failed with data ${data}`
+  );
+
+  const yAxis = [
+    {
+      x: xScale(firstEntry.x),
+      y: yScale(firstEntry.y) - margin.top / 2,
+      label: format.amount.format(firstEntry.y),
+    },
+    {
+      x: xScale(lastEntry.x),
+      y: yScale(lastEntry.y) - margin.top / 2,
+      label: format.amount.format(lastEntry.y),
+    },
+  ] satisfies InvoiceChart["yAxis"];
+  const xAxis = [
+    {
+      x: xScale(firstEntry.x),
+      y: height + (margin.bottom * 2) / 3,
+      label: format.date.format(firstEntry.x),
+    },
+    {
+      x: xScale(lastEntry.x),
+      y: height + (margin.bottom * 2) / 3,
+      label: format.date.format(lastEntry.x),
+    },
+  ] satisfies InvoiceChart["xAxis"];
 
   const points = data.map(({ x, y }) => ({
     x: xScale(x),
     y: yScale(y),
-    label: `${formatDate(x)} - ${formatAmount(y)}`,
+    label: `${format.date.format(x)} - ${format.amount.format(y)}`,
   }));
 
   return {
     dPath,
-    yAxis: [
-      {
-        x: xScale(firstEntry.x),
-        y: yScale(firstEntry.y) - margin.top,
-        label: formatAmount(firstEntry.y),
-      },
-      {
-        x: xScale(lastEntry.x),
-        y: yScale(lastEntry.y) - margin.top,
-        label: formatAmount(lastEntry.y),
-      },
-    ],
-    xAxis: [
-      {
-        x: xScale(firstEntry.x),
-        y: height,
-        label: formatDate(firstEntry.x),
-      },
-      {
-        x: xScale(lastEntry.x),
-        y: height,
-        label: formatDate(lastEntry.x),
-      },
-    ],
+    yAxis,
+    xAxis,
     points,
   };
 }
 
-function calculateCumulativeDeposits(
-  deposits: Deposits
-): { x: Date; y: number }[] {
+function calculateCumulativeDeposits(deposits: Deposits) {
   const amountPerDate = new Map<Date, number>();
-  for (let { amount, depositDate } of deposits) {
+  for (const { amount, depositDate } of deposits) {
     const currentAmount = amountPerDate.get(depositDate) ?? 0;
     amountPerDate.set(depositDate, currentAmount + amount);
   }
@@ -115,17 +116,14 @@ function calculateCumulativeDeposits(
   });
 }
 
-function formatAmount(amount: number) {
-  return new Intl.NumberFormat("en-US", {
+const format = {
+  amount: new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
     currencyDisplay: "narrowSymbol",
-  }).format(amount);
-}
-
-function formatDate(date: number | Date) {
-  return new Intl.DateTimeFormat("en-US", {
+  }),
+  date: new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
-  }).format(date);
-}
+  }),
+};

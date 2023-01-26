@@ -17,14 +17,15 @@ import type { Deposit } from "~/models/deposit.server";
 import { createDeposit } from "~/models/deposit.server";
 import invariant from "tiny-invariant";
 import { useEffect, useRef, useState } from "react";
-import { interpolatePath } from "d3-interpolate-path";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
+import { interpolatePath } from "d3-interpolate-path";
 import { Tooltip } from "@reach/tooltip";
-import tooltipStyles from "~/styles/tooltip.css";
 import { useHydrated } from "remix-utils";
 import { generateInvoiceChart } from "~/utils/chart.server";
 import type { InvoiceChart } from "~/utils/chart.server";
+
+import tooltipStyles from "~/styles/tooltip.css";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tooltipStyles },
@@ -43,7 +44,7 @@ type LoaderData = {
   deposits: Array<
     Pick<Deposit, "id" | "amount"> & { depositDateFormatted: string }
   >;
-  invoiceChart: InvoiceChart | null;
+  invoiceChart?: InvoiceChart;
 };
 
 export async function loader({ request, params }: LoaderArgs) {
@@ -277,7 +278,7 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
-          {deposits.length > 1 && invoiceChart ? (
+          {invoiceChart ? (
             <DepositsLineChart invoiceChart={invoiceChart} />
           ) : null}
           {deposits.map((deposit) => (
@@ -375,49 +376,43 @@ function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
   );
 }
 
-type DepositsLineChartProps = {
-  invoiceChart: NonNullable<LoaderData["invoiceChart"]>;
-};
-
 const width = 400;
 const height = 200;
 const margin = { top: 10, right: 10, bottom: 30, left: 10 };
 
-function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
-  const { intermediateDPath: dPath, state } = useDPathAnimation(
-    invoiceChart.dPath
-  );
+function DepositsLineChart({
+  invoiceChart,
+}: {
+  invoiceChart: NonNullable<LoaderData["invoiceChart"]>;
+}) {
   const isHydrated = useHydrated();
+  const { dPath, yAxis, xAxis, points } = invoiceChart;
+  const { intermediateDPath, state } = useDPathAnimation(dPath);
 
   return (
     <svg
-      viewBox={`0 0
-        ${width + margin.left + margin.right}
-        ${height + margin.top + margin.bottom}
-      `}
+      viewBox={`0 0 ${width + margin.left + margin.right} ${
+        height + margin.top + margin.bottom
+      }`}
       className="min-w-[250px]"
     >
       <g transform={`translate(${margin.left},${margin.top})`}>
-        {/* "y-axis" */}
-        {invoiceChart.yAxis.map(({ x, y, label }, i, arr) => (
+        {yAxis.map(({ x, y, label }, i) => (
           <AxisText
             key={`${x},${y}`}
             x={x}
             y={y}
-            textAnchor={i === arr.length - 1 ? "end" : "start"}
+            textAnchor={i === 0 ? "start" : "end"}
           >
             {label}
           </AxisText>
         ))}
-
-        {/* x-axis */}
-        {invoiceChart.xAxis.map(({ x, y, label }, i, arr) => (
+        {xAxis.map(({ x, y, label }, i) => (
           <AxisText
             key={`${x},${y}`}
             x={x}
             y={y}
-            alignmentBaseline="hanging"
-            textAnchor={i === arr.length - 1 ? "end" : "start"}
+            textAnchor={i === 0 ? "start" : "end"}
           >
             {label}
           </AxisText>
@@ -425,17 +420,17 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
 
         <path
           className="stroke-3 fill-transparent stroke-blue-300 stroke-[3px] md:stroke-2 xl:stroke-1"
-          d={dPath}
+          d={intermediateDPath}
         />
+
         {state === "idle"
-          ? invoiceChart.points.map(({ x, y, label }) => (
+          ? points.map(({ x, y, label }) => (
               <Tooltip
-                key={x}
+                key={`${x},${y}`}
                 label={label}
                 className="rounded-md bg-zinc-500 px-2 py-1 text-white"
               >
                 <circle
-                  key={x}
                   cx={x}
                   cy={y}
                   r={4}
@@ -449,18 +444,6 @@ function DepositsLineChart({ invoiceChart }: DepositsLineChartProps) {
           : null}
       </g>
     </svg>
-  );
-}
-
-function AxisText({ className, ...props }: React.SVGProps<SVGTextElement>) {
-  return (
-    <text
-      className={clsx(
-        "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs",
-        className
-      )}
-      {...props}
-    />
   );
 }
 
@@ -488,7 +471,6 @@ function useDPathAnimation(dPath: string, durationMs = 200) {
         });
         window.requestAnimationFrame(step);
       } else {
-        if (dPath === null) return;
         setIntermediateDPath({ intermediateDPath: dPath, state: "idle" });
         previousDPath.current = dPath;
       }
@@ -516,6 +498,18 @@ function LineItemContainer({
     >
       {children}
     </div>
+  );
+}
+
+function AxisText({ className, ...props }: React.SVGProps<SVGTextElement>) {
+  return (
+    <text
+      className={clsx(
+        "fill-gray-600 text-d-p-lg md:text-d-p-sm xl:text-d-p-xs",
+        className
+      )}
+      {...props}
+    />
   );
 }
 
