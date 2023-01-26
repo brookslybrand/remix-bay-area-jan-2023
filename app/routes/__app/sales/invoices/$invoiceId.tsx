@@ -19,13 +19,13 @@ import invariant from "tiny-invariant";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { useSpinDelay } from "spin-delay";
-import { scaleLinear, scaleTime } from "d3-scale";
-import { curveStepAfter, line } from "d3-shape";
 import { interpolatePath } from "d3-interpolate-path";
 import { Tooltip } from "@reach/tooltip";
+import { useHydrated } from "remix-utils";
+import { generateInvoiceChart } from "~/utils/chart.server";
+import type { InvoiceChart } from "~/utils/chart.server";
 
 import tooltipStyles from "~/styles/tooltip.css";
-import { useHydrated } from "remix-utils";
 
 export const links: LinksFunction = () => [
   { rel: "stylesheet", href: tooltipStyles },
@@ -44,6 +44,7 @@ type LoaderData = {
   deposits: Array<
     Pick<Deposit, "id" | "amount"> & { depositDateFormatted: string }
   >;
+  invoiceChart?: InvoiceChart;
 };
 
 export async function loader({ request, params }: LoaderArgs) {
@@ -75,6 +76,11 @@ export async function loader({ request, params }: LoaderArgs) {
       amount: deposit.amount,
       depositDateFormatted: deposit.depositDate.toLocaleDateString(),
     })),
+    invoiceChart: generateInvoiceChart(invoiceDetails.invoice.deposits, {
+      width,
+      height,
+      margin,
+    }),
   });
 }
 
@@ -208,7 +214,7 @@ export default function InvoiceRoute() {
         <div>{currencyFormatter.format(data.totalAmount)}</div>
       </LineItemContainer>
       <div className="h-8" />
-      <Deposits deposits={data.deposits} />
+      <Deposits deposits={data.deposits} invoiceChart={data.invoiceChart} />
     </div>
   );
 }
@@ -223,8 +229,8 @@ interface DepositFormElement extends HTMLFormElement {
   readonly elements: DepositFormControlsCollection;
 }
 
-type DepositsProps = Pick<LoaderData, "deposits">;
-function Deposits({ deposits: ogDeposits }: DepositsProps) {
+type DepositsProps = Pick<LoaderData, "deposits" | "invoiceChart">;
+function Deposits({ deposits: ogDeposits, invoiceChart }: DepositsProps) {
   const newDepositFetcher = useFetcher();
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -272,7 +278,23 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
       <div className="font-bold leading-8">Deposits</div>
       {deposits.length > 0 ? (
         <div>
-          <DepositsLineChart deposits={deposits} />
+          {invoiceChart ? (
+            <DepositsLineChart
+              deposits={deposits}
+              invoiceChart={invoiceChart}
+            />
+          ) : null}
+          {deposits.map((deposit) => (
+            <LineItemContainer key={deposit.id}>
+              <Link
+                to={`../../deposits/${deposit.id}`}
+                className="text-blue-600 underline"
+              >
+                {deposit.depositDateFormatted}
+              </Link>
+              <div>{currencyFormatter.format(deposit.amount)}</div>
+            </LineItemContainer>
+          ))}
         </div>
       ) : (
         <div>None yet</div>
@@ -359,65 +381,14 @@ function Deposits({ deposits: ogDeposits }: DepositsProps) {
 
 const width = 400;
 const height = 200;
-const margin = { top: 10, right: 10, bottom: 20, left: 10 };
+const margin = { top: 10, right: 10, bottom: 30, left: 10 };
 
-function DepositsLineChart({ deposits }: DepositsProps) {
+function DepositsLineChart({
+  deposits,
+  invoiceChart,
+}: Required<DepositsProps>) {
   const isHydrated = useHydrated();
-  const data = calculateCumulativeDeposits(deposits);
-  const firstEntry = data[0];
-  const lastEntry = data[data.length - 1];
-
-  const yScale = scaleLinear()
-    .domain([firstEntry.y, lastEntry.y])
-    .range([height, 0])
-    .nice();
-  const xScale = scaleTime()
-    .domain([firstEntry.x, lastEntry.x])
-    .range([0, width]);
-
-  const lineGenerator = line<{ x: Date; y: number }>()
-    .x((d) => xScale(d.x))
-    .y((d) => yScale(d.y))
-    .curve(curveStepAfter);
-
-  const dPath = lineGenerator(data);
-
-  const yAxis = [
-    {
-      x: xScale(firstEntry.x),
-      y: yScale(firstEntry.y) - margin.top,
-      label: format.amount.format(firstEntry.y),
-    },
-    {
-      x: xScale(lastEntry.x),
-      y: yScale(lastEntry.y) - margin.top,
-      label: format.amount.format(lastEntry.y),
-    },
-  ];
-  const xAxis = [
-    {
-      x: xScale(firstEntry.x),
-      y: height + margin.bottom,
-      label: format.date.format(firstEntry.x),
-    },
-    {
-      x: xScale(lastEntry.x),
-      y: height + margin.bottom,
-      label: format.date.format(lastEntry.x),
-    },
-  ];
-
-  const points = data.map(({ x, y }) => ({
-    x: xScale(x),
-    y: yScale(y),
-    label: `${format.date.format(x)} - ${format.amount.format(y)}`,
-  }));
-
-  invariant(
-    dPath !== null,
-    `Something went wrong: line generation failed with data ${data}`
-  );
-
+  const { dPath, yAxis, xAxis, points } = invoiceChart;
   const { intermediateDPath, state } = useDPathAnimation(dPath);
 
   return (
@@ -571,36 +542,3 @@ export function ErrorBoundary({ error }: { error: Error }) {
     </div>
   );
 }
-
-// Chart utils
-
-function calculateCumulativeDeposits(deposits: LoaderData["deposits"]) {
-  const amountPerDate = new Map<Date, number>();
-  for (const { amount, depositDateFormatted } of deposits) {
-    const depositDate = new Date(depositDateFormatted);
-    const currentAmount = amountPerDate.get(depositDate) ?? 0;
-    amountPerDate.set(depositDate, currentAmount + amount);
-  }
-
-  const dates = [...amountPerDate.keys()].sort(
-    (d1, d2) => d1.getDate() - d2.getDate()
-  );
-
-  let cumulativeAmount = 0;
-  return dates.map((date) => {
-    cumulativeAmount += amountPerDate.get(date) ?? 0;
-    return { x: date, y: cumulativeAmount };
-  });
-}
-
-const format = {
-  amount: new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    currencyDisplay: "narrowSymbol",
-  }),
-  date: new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-  }),
-};
